@@ -1,0 +1,98 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Roblox Banner &amp; PFP Maker</title>
+<style>
+:root{color-scheme:dark;--l:#2e2e2e}*{box-sizing:border-box}
+body{margin:0;background:#0b0b0b;color:#eee;font:14px system-ui,sans-serif;display:grid;grid-template-columns:310px 1fr;min-height:100vh}
+aside{padding:16px;border-right:1px solid var(--l);display:flex;flex-direction:column;gap:9px;overflow:auto;max-height:100vh}
+h1{font-size:16px;margin:0 0 4px}h2{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#888;margin:10px 0 0}
+label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#aaa;flex:1}
+input,select,textarea,button{font:inherit;background:#161616;color:#eee;border:1px solid var(--l);border-radius:6px;padding:6px}
+input[type=color]{padding:0;height:30px;width:100%}input[type=range]{padding:0;accent-color:#fff}
+.row{display:flex;gap:8px}.seg{display:flex}.seg button{flex:1;border-radius:0}.seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0}
+.seg .on{background:#fff;color:#000}#dl{background:#fff;color:#000;font-weight:600;padding:10px;cursor:pointer}
+main{display:grid;place-items:center;padding:16px}#wrap{position:relative;border:1px solid var(--l)}#wrap canvas{display:block}
+@media(max-width:820px){body{grid-template-columns:1fr}aside{max-height:none;border:0}}
+</style></head><body>
+<aside>
+<h1>Roblox Banner &amp; PFP Maker</h1>
+<div class="seg"><button data-mode="pfp" class="on">PFP</button><button data-mode="banner">Banner</button></div>
+<h2>Camera</h2>
+<label>Angle<input type="range" data-k="az" min="-90" max="90"></label>
+<label>Tilt<input type="range" data-k="el" min="-15" max="45"></label>
+<label>Zoom<input type="range" data-k="zoom" min=".5" max="2.5" step=".01"></label>
+<label>Character X<input type="range" data-k="cx" min="0" max="1" step=".01"></label>
+<label>Character Y<input type="range" data-k="cy" min="0" max="1" step=".01"></label>
+<h2>Character &amp; location</h2>
+<label>Spawn point<select data-g="spawn"></select></label>
+<div class="row"><label>Skin<input type="color" data-g="skin"></label><label>Shirt<input type="color" data-g="shirt"></label><label>Pants<input type="color" data-g="pants"></label></div>
+<button id="dl">Download PNG</button>
+</aside>
+<main><div id="wrap"></div></main>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+const T={az:0,el:4,zoom:1,cx:.5,cy:.5};
+const cfg={pfp:{...T,cx:.72},banner:{...T,cx:.8,el:3}};
+const G={spawn:1,skin:'#f5cd30',shirt:'#0d69ac',pants:'#4b974b'};
+let mode='pfp',busy=false;
+const $=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
+// renderer + scene
+const wrap=$('#wrap'),renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.shadowMap.enabled=true;wrap.prepend(renderer.domElement);
+const sky=new THREE.Color('#a9cdf2'),scene=new THREE.Scene();scene.background=sky;scene.fog=new THREE.Fog(sky,160,480);
+const camera=new THREE.PerspectiveCamera(30,1,.1,1000);
+scene.add(new THREE.HemisphereLight('#dbe9ff','#7a6a55',1.1));
+const sun=new THREE.DirectionalLight('#fff0d8',2.4);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:200});sun.shadow.bias=-.0004;scene.add(sun,sun.target);
+// map from converted .rbxl
+const S=await (await fetch('scene.json')).json();
+const wedge=(()=>{const s=new THREE.Shape([new THREE.Vector2(.5,-.5),new THREE.Vector2(-.5,-.5),new THREE.Vector2(-.5,.5)]);
+ const g=new THREE.ExtrudeGeometry(s,{depth:1,bevelEnabled:false});g.translate(0,0,-.5);g.rotateY(Math.PI/2);return g})();
+const geos=[new THREE.BoxGeometry(1,1,1),wedge,new THREE.CylinderGeometry(.5,.5,1,24).rotateZ(Math.PI/2),new THREE.SphereGeometry(.5,20,14)];
+const mats=()=>new THREE.MeshStandardMaterial({roughness:.9});const mx=new THREE.Matrix4(),col=new THREE.Color(),by=[[],[],[],[]];
+const mk=p=>mx.set(p[4]*p[13],p[5]*p[14],p[6]*p[15],p[1],p[7]*p[13],p[8]*p[14],p[9]*p[15],p[2],p[10]*p[13],p[11]*p[14],p[12]*p[15],p[3],0,0,0,1);
+for(const p of S.p){if(p[17]>0){const m=new THREE.Mesh(geos[p[0]],new THREE.MeshStandardMaterial({color:'#'+p[16],transparent:true,opacity:1-p[17],roughness:.9}));
+ m.matrixAutoUpdate=false;m.matrix.copy(mk(p));m.castShadow=m.receiveShadow=true;scene.add(m)}else by[p[0]].push(p)}
+by.forEach((a,t)=>{if(!a.length)return;const im=new THREE.InstancedMesh(geos[t],mats(),a.length);
+ a.forEach((p,i)=>{im.setMatrixAt(i,mk(p));im.setColorAt(i,col.set('#'+p[16]))});im.castShadow=im.receiveShadow=true;scene.add(im)});
+// character (R6-style, faces -Z)
+const M={skin:mats(),shirt:mats(),pants:mats()},char=new THREE.Group();scene.add(char);
+const box=(w,h,d,m,x,y,z,par)=>{const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;par.add(o);return o};
+const piv=(x,y,par)=>{const p=new THREE.Group();p.position.set(x,y,0);par.add(p);return p};
+box(2,2,1,M.shirt,0,3,0,char);
+const head=piv(0,4,char);const hm=new THREE.Mesh(new THREE.CylinderGeometry(.62,.62,1.2,32),M.skin);hm.position.y=.6;hm.castShadow=true;head.add(hm);
+const fc=document.createElement('canvas');fc.width=fc.height=256;const f=fc.getContext('2d');f.fillStyle='#000';
+for(const x of[92,164]){f.beginPath();f.ellipse(x,112,9,17,0,0,7);f.fill()}
+f.strokeStyle='#000';f.lineWidth=8;f.lineCap='round';f.beginPath();f.arc(128,118,58,.2*Math.PI,.8*Math.PI);f.stroke();
+const ftex=new THREE.CanvasTexture(fc);ftex.colorSpace=THREE.SRGBColorSpace;
+const face=new THREE.Mesh(new THREE.CylinderGeometry(.625,.625,1.2,24,1,true,Math.PI-.87,1.74),new THREE.MeshBasicMaterial({map:ftex,transparent:true,depthWrite:false}));face.position.y=.6;head.add(face);
+const aL=piv(1.5,4,char),aR=piv(-1.5,4,char),lL=piv(.5,2,char),lR=piv(-.5,2,char);
+[aL,aR].forEach(p=>box(1,2,1,M.skin,0,-1,0,p));[lL,lR].forEach(p=>box(1,2,1,M.pants,0,-1,0,p));
+aL.rotation.z=.1;aR.rotation.z=-.12;aR.rotation.x=-.05;lL.rotation.z=-.02;lR.rotation.z=.02;head.rotation.z=.03;
+// UI state
+const sp=$('[data-g=spawn]');S.spawns.forEach((s,i)=>sp.add(new Option('Spawn '+(i+1),i)));
+function place(){const s=S.spawns[G.spawn];char.position.set(s[0],s[1],s[2]);char.rotation.y=s[3];sun.target.position.copy(char.position);
+ sun.position.set(char.position.x+35,char.position.y+55,char.position.z+25)}
+function colors(){for(const k of['skin','shirt','pants'])M[k].color.set(G[k])}
+function load(){all('[data-k]').forEach(e=>e.value=cfg[mode][e.dataset.k]);all('[data-g]').forEach(e=>e.value=G[e.dataset.g]);
+ all('[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode==mode))}
+all('[data-k]').forEach(e=>e.oninput=()=>{cfg[mode][e.dataset.k]=+e.value});
+all('[data-g]').forEach(e=>e.oninput=()=>{G[e.dataset.g]=e.dataset.g=='spawn'?+e.value:e.value;place();colors()});
+all('[data-mode]').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;load();fit()});
+function fit(){const pf=mode=='pfp',aw=Math.max(260,Math.min(innerWidth>820?innerWidth-370:innerWidth-34,960)),w=pf?Math.min(aw,innerHeight-60,640):aw,h=pf?w:w/3,d=Math.min(devicePixelRatio,2);
+ renderer.setPixelRatio(d);renderer.setSize(w,h)}
+// camera
+function cam(){const c=cfg[mode],pf=mode=='pfp',fov=pf?28:38,cv=renderer.domElement,asp=cv.width/cv.height;camera.fov=fov;camera.aspect=asp;
+ const a=char.rotation.y+c.az*Math.PI/180,e=c.el*Math.PI/180,t=new THREE.Vector3(0,pf?4.65:3,0).add(char.position),d=(pf?4.6:11)/c.zoom;
+ camera.position.copy(t).add(new THREE.Vector3(-Math.sin(a)*Math.cos(e),Math.sin(e),-Math.cos(a)*Math.cos(e)).multiplyScalar(d));camera.lookAt(t);camera.updateMatrixWorld();
+ const vh=2*d*Math.tan(fov*Math.PI/360),r=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),u=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1);
+ const s=r.multiplyScalar(-(c.cx-.5)*vh*asp).addScaledVector(u,(c.cy-.5)*vh);camera.position.add(s);camera.lookAt(t.add(s));camera.updateProjectionMatrix()}
+// idle animation + loop
+(function tick(t){requestAnimationFrame(tick);if(busy)return;t/=1000;
+ aL.rotation.x=Math.sin(t*1.4)*.03;aR.rotation.x=-.05+Math.sin(t*1.4+1)*.03;head.rotation.y=Math.sin(t*.6)*.05;
+ cam();renderer.render(scene,camera)})(0);
+// export
+$('#dl').onclick=()=>{busy=true;const [w,h]=mode=='pfp'?[1024,1024]:[1920,640];renderer.setPixelRatio(1);renderer.setSize(w,h,false);cam();renderer.render(scene,camera);
+ const o=document.createElement('canvas');o.width=w;o.height=h;const x=o.getContext('2d');x.drawImage(renderer.domElement,0,0);
+ o.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`roblox-${mode}.png`;a.click();busy=false;fit()})};
+addEventListener('resize',fit);place();colors();load();fit();
+</script></body></html>

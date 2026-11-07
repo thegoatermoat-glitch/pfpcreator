@@ -1,0 +1,3 @@
+{"name":"roblox-banner-pfp-maker","version":"1.0.0","private":true,
+"scripts":{"build":"mkdir -p public/vendor && cp node_modules/three/build/three.module.js public/vendor/three.module.js","dev":"npm run build && npx serve public"},
+"dependencies":{"three":"0.160.0"}}

@@ -28,10 +28,14 @@ main{display:grid;place-items:center;padding:16px}#wrap{position:relative;border
 <div class="row"><label>Skin<input type="color" data-g="skin"></label><label>Shirt<input type="color" data-g="shirt"></label><label>Pants<input type="color" data-g="pants"></label></div>
 <button id="dl">Download PNG</button>
 </aside>
-<main><div id="wrap"></div></main>
-<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<main><div id="wrap"></div><p id="ld" style="color:#888">Loading…</p></main>
+<script>
+function showErr(m){var d=document.getElementById('err');if(!d){d=document.createElement('pre');d.id='err';d.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;max-height:40vh;overflow:auto;background:#300;color:#fdd;padding:8px;font:12px monospace;z-index:9;white-space:pre-wrap;margin:0';document.body.appendChild(d)}d.textContent+=m+'\n'}
+addEventListener('error',function(e){showErr('Error: '+e.message+(e.filename?' ('+e.filename.split('/').pop()+':'+e.lineno+')':''))});
+addEventListener('unhandledrejection',function(e){showErr('Error: '+(e.reason&&e.reason.message||e.reason))});
+</script>
 <script type="module">
-import * as THREE from 'three';
+let THREE;try{THREE=await import('./vendor/three.module.js')}catch(e){THREE=await import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js')}
 const T={az:0,el:4,zoom:1,cx:.5,cy:.5};
 const cfg={pfp:{...T,cx:.72},banner:{...T,cx:.8,el:3}};
 const G={style:0,spawn:1,skin:'#f5cd30',shirt:'#527cae',pants:'#5b9a4c'};
@@ -44,7 +48,7 @@ const sky=new THREE.Color('#a9cdf2'),scene=new THREE.Scene();scene.background=sk
 const camera=new THREE.PerspectiveCamera(30,1,.5,800);
 scene.add(new THREE.HemisphereLight('#dbe9ff','#7a6a55',1.1));
 const sun=new THREE.DirectionalLight('#fff0d8',2.4);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
-Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:200});sun.shadow.bias=-.0004;scene.add(sun,sun.target);
+Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:200});sun.shadow.bias=-.0004;sun.shadow.camera.updateProjectionMatrix();scene.add(sun,sun.target);
 // map from converted .rbxl
 const S=await (await fetch('scene.json')).json();
 const wedge=(()=>{const s=new THREE.Shape([new THREE.Vector2(.5,-.5),new THREE.Vector2(-.5,-.5),new THREE.Vector2(-.5,.5)]);
@@ -153,5 +157,5 @@ function cam(){const c=cfg[mode],pf=mode=='pfp',fov=pf?28:38,cv=renderer.domElem
 $('#dl').onclick=()=>{busy=true;const [w,h]=mode=='pfp'?[1024,1024]:[1920,640];renderer.setPixelRatio(1);renderer.setSize(w,h,false);step(performance.now()/1000,true);cam();render();
  const o=document.createElement('canvas');o.width=w;o.height=h;const x=o.getContext('2d');x.drawImage(renderer.domElement,0,0);
  o.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`roblox-${mode}.png`;a.click();busy=false;fit()})};
-addEventListener('resize',fit);place();colors();load();fit();
+addEventListener('resize',fit);place();colors();load();fit();$('#ld').remove();
 </script></body></html>

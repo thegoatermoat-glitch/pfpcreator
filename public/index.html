@@ -16,6 +16,7 @@ main{display:grid;place-items:center;padding:16px}#wrap{position:relative;border
 <h1>Roblox Banner &amp; PFP Maker</h1>
 <div class="seg"><button data-mode="pfp" class="on">PFP</button><button data-mode="banner">Banner</button></div>
 <h2>Pose</h2><div id="poses" class="grid"></div>
+<h2>Style</h2><div id="styles" class="grid"></div>
 <h2>Camera</h2>
 <label>Angle<input type="range" data-k="az" min="-90" max="90"></label>
 <label>Tilt<input type="range" data-k="el" min="-15" max="45"></label>
@@ -33,14 +34,14 @@ main{display:grid;place-items:center;padding:16px}#wrap{position:relative;border
 import * as THREE from 'three';
 const T={az:0,el:4,zoom:1,cx:.5,cy:.5};
 const cfg={pfp:{...T,cx:.72},banner:{...T,cx:.8,el:3}};
-const G={spawn:1,skin:'#f5cd30',shirt:'#527cae',pants:'#5b9a4c'};
+const G={style:0,spawn:1,skin:'#f5cd30',shirt:'#527cae',pants:'#5b9a4c'};
 let mode='pfp',busy=false;
 const $=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
 // renderer + scene
 const wrap=$('#wrap'),renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.shadowMap.enabled=true;wrap.prepend(renderer.domElement);
 const sky=new THREE.Color('#a9cdf2'),scene=new THREE.Scene();scene.background=sky;scene.fog=new THREE.Fog(sky,160,480);
-const camera=new THREE.PerspectiveCamera(30,1,.1,1000);
+const camera=new THREE.PerspectiveCamera(30,1,.5,800);
 scene.add(new THREE.HemisphereLight('#dbe9ff','#7a6a55',1.1));
 const sun=new THREE.DirectionalLight('#fff0d8',2.4);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
 Object.assign(sun.shadow.camera,{left:-40,right:40,top:40,bottom:-40,near:1,far:200});sun.shadow.bias=-.0004;scene.add(sun,sun.target);
@@ -95,6 +96,39 @@ function step(t,snap){const P=POSES[pose],a=snap?1:.14;
  rig.position.y=cy;rig.rotation.y=cyaw}
 const pg=$('#poses');Object.keys(POSES).forEach(n=>{const b=document.createElement('button');b.textContent=n;b.className=n==pose?'on':'';
  b.onclick=()=>{pose=n;pg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x==b))};pg.append(b)});
+// styles: render to a 2x target, then a full-screen stylize pass (ink outlines from depth + luminance edges)
+const STY=['Standard','Comic','Noir','Pixel','Neon','Sketch'];
+const rt=new THREE.WebGLRenderTarget(2,2,{depthTexture:new THREE.DepthTexture(2,2,THREE.UnsignedIntType)});
+const pm=new THREE.ShaderMaterial({depthTest:false,depthWrite:false,uniforms:{tC:{value:rt.texture},tD:{value:rt.depthTexture},res:{value:new THREE.Vector2()},near:{value:.5},far:{value:800},style:{value:0}},
+ vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',fragmentShader:`uniform sampler2D tC,tD;uniform vec2 res;uniform float near,far,style;varying vec2 vUv;
+float lin(vec2 u){float d=texture2D(tD,u).x;return near*far/(far-d*(far-near));}
+vec3 S(vec2 u){return pow(texture2D(tC,u).rgb,vec3(.4545));}
+float L(vec2 u){return dot(S(u),vec3(.299,.587,.114));}
+float H(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+void main(){vec2 uv=vUv;float asp=res.x/res.y;
+ if(style>2.5&&style<3.5){float k=res.y/100.;uv=(floor(uv*res/k)+.5)*k/res;}
+ vec2 e=vec2(res.y*.0033)/res,ex=vec2(e.x,0.),ey=vec2(0.,e.y);
+ float d=lin(uv),lap=(abs(lin(uv+ex)+lin(uv-ex)-2.*d)+abs(lin(uv+ey)+lin(uv-ey)-2.*d))/d;
+ float de=smoothstep(.012,.035,lap),le=smoothstep(.12,.3,abs(L(uv+ex)-L(uv-ex))+abs(L(uv+ey)-L(uv-ey))),ink=max(de,le*.8);
+ vec3 c=S(uv);float l=dot(c,vec3(.299,.587,.114));
+ if(style<1.5){c=mix(vec3(l),c,1.35);c=floor(c*4.+.5)/4.;
+  vec2 f=fract(mat2(.707,-.707,.707,.707)*(uv*vec2(asp,1.)*80.))-.5;
+  c*=1.-.45*step(length(f),(1.-l)*.62)*smoothstep(.7,.35,l);c=mix(c,vec3(.04,.03,.07),ink);}
+ else if(style<2.5){float g=floor(smoothstep(.12,.88,l)*5.+.5)/5.+(H(uv*res)-.5)*.07;
+  g*=1.-.55*pow(length(vUv-.5)*1.2,2.);c=vec3(mix(g,0.,ink));}
+ else if(style<3.5){c=floor(c*6.+.5)/6.;c*=1.-.5*de;}
+ else if(style<4.5){float g=smoothstep(0.,.8,l);c=mix(vec3(.05,.01,.18),vec3(1.,.2,.65),smoothstep(0.,.5,g));
+  c=mix(c,vec3(.2,.95,1.),smoothstep(.55,1.,g));c=mix(c,vec3(.3,1.,1.),ink);}
+ else{vec2 q=uv*vec2(asp,1.)*110.;float h1=step(fract(q.x+q.y),.22)*step(l,.62),h2=step(fract(q.x-q.y),.22)*step(l,.38);
+  c=mix(vec3(.96,.94,.88),c,.3);c=mix(c,vec3(.12,.11,.15),max(h1*.6,h2*.7));c=mix(c,vec3(.1,.09,.12),ink);}
+ gl_FragColor=vec4(c,1.);}`});
+const ps=new THREE.Scene(),bs=new THREE.Vector2();ps.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),pm));
+function render(){if(!G.style){renderer.render(scene,camera);return}
+ renderer.getDrawingBufferSize(bs);const w=bs.x*2,h=bs.y*2;if(rt.width!=w||rt.height!=h)rt.setSize(w,h);
+ pm.uniforms.res.value.set(w,h);pm.uniforms.style.value=G.style;
+ renderer.setRenderTarget(rt);renderer.render(scene,camera);renderer.setRenderTarget(null);renderer.render(ps,camera)}
+const sg=$('#styles');STY.forEach((n,i)=>{const b=document.createElement('button');b.textContent=n;b.className=i?'':'on';
+ b.onclick=()=>{G.style=i;sg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x==b))};sg.append(b)});
 // UI state
 const sp=$('[data-g=spawn]');S.spawns.forEach((s,i)=>sp.add(new Option('Spawn '+(i+1),i)));
 function place(){const s=S.spawns[G.spawn];char.position.set(s[0],s[1],s[2]);char.rotation.y=s[3];sun.target.position.copy(char.position);
@@ -114,9 +148,9 @@ function cam(){const c=cfg[mode],pf=mode=='pfp',fov=pf?28:38,cv=renderer.domElem
  const s=r.multiplyScalar(-(c.cx-.5)*vh*asp).addScaledVector(u,(c.cy-.5)*vh);camera.position.add(s);camera.lookAt(t.add(s));camera.updateProjectionMatrix()}
 // idle animation + loop
 (function tick(t){requestAnimationFrame(tick);if(busy)return;t/=1000;
- step(t);cam();renderer.render(scene,camera)})(0);
+ step(t);cam();render()})(0);
 // export
-$('#dl').onclick=()=>{busy=true;const [w,h]=mode=='pfp'?[1024,1024]:[1920,640];renderer.setPixelRatio(1);renderer.setSize(w,h,false);step(performance.now()/1000,true);cam();renderer.render(scene,camera);
+$('#dl').onclick=()=>{busy=true;const [w,h]=mode=='pfp'?[1024,1024]:[1920,640];renderer.setPixelRatio(1);renderer.setSize(w,h,false);step(performance.now()/1000,true);cam();render();
  const o=document.createElement('canvas');o.width=w;o.height=h;const x=o.getContext('2d');x.drawImage(renderer.domElement,0,0);
  o.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`roblox-${mode}.png`;a.click();busy=false;fit()})};
 addEventListener('resize',fit);place();colors();load();fit();
